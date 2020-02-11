@@ -8,6 +8,17 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+
+
+# Title: Weather vs. Climate
+# Data Source: NOAA - Global Historical Climatology Newtork (GHCN)
+# Date: Started in Summer 2019, First Shared on Github 11 Feb. 2020
+# Created By: Ryan McKeon - Geography Department | Dartmouth College | ryan.mckeon@gmail.com
+
+
+
+
+# Import Libraries
 library(flexdashboard)
 library(rnoaa)
 library(data.table)
@@ -25,21 +36,16 @@ library(gridExtra)
 
 # Set some Parameters:
 
-# Pick A Weather Station
+# Pick A Weather Station  # MAKE DYNAMIC IN SHINY
 stationID = "USC00273850"  # Hanover NH
-#stationID = "USC00097600"  # Rome GA
-#stationID = "USC00046719" # Pasadena CA
-#stationID = "USC00194313"  # Lowell MA
-#stationID = "USC00439984"  # Woodstock VT
-#stationID = "USC00438556"  # Thetford VT
 
-# Pick a year for temperature
-currentYear = 2017  # MAKE DYNAMIC IN SHINY
+# Pick a year for temperature plot
+currentYear = 2019  # MAKE DYNAMIC IN SHINY
 
+# Path to GHCN Weather Stations Text File
+GHCN_all = fread("GHCN_Weather_Stations_ALL.txt") 
 
 # ***********************************  Filter Stations and Plot **************************
-# load all GHCN Weather Stations
-GHCN_all = fread("GHCN_Weather_Stations_ALL.txt") 
 
 # filter all to unique station IDs for all GHCN weather stations
 GHCN_stations = unique(GHCN_all, by = "Station")
@@ -223,7 +229,7 @@ currentYearDF$cumSumPrecip = cumsum(currentYearDF$precipInches)
 Row
 -----------------------------------------------------------------------
 
-### Map of Weather Stations from the Global Historical Climatology Network - The blue pin indicates the location of the current station being plotted below. The darkness of the point indicates the length of the record for each station.  Click on points to get the station ID number.
+### Map of Weather Stations from the Global Historical Climatology Network - The blue pin indicates the location of the current station being plotted below. The darkness of the point indicates the length of the record for each station. The map is dynamic, pan, zoom and click on points to get the station ID number.
 
 ```{r}
 # Plot Stations with Leaflet
@@ -258,7 +264,7 @@ Lmap
 Row
 -----------------------------------------------------------------------
 
-### Monthly Temperture and Precipition Normal (1981-2010)  
+### Monthly Temperture and Precipition (Averaged over 1981-2010)  
 
 ```{r, fig.cap="Classic Climograph showing average monthly temperature (gray bars) and precipitation (blue line). "}
 
@@ -289,7 +295,7 @@ Climograph
 
 ### Data Completeness Matrix
 
-```{r, fig.cap="Blue to Red colors reflect recorded daily high temperature, gray and white represent missing data."}
+```{r, fig.cap="Blue to Red colors reflect recorded daily mean temperature, gray and white represent missing data."}
 
 # Heat map for visualizing data completeness %%%%%%%%%%%%%%%%%%%%
 
@@ -310,8 +316,8 @@ completeness
 Row
 -----------------------------------------------------------------------
 
-### Daily Temperature vs. Long-term Averages
-```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low since 1980 (dark gray)."}
+### Daily Temperature Experienced vs. the Average and the Records for each day
+```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low temperature ever recorded at this station (dark gray)."}
 # construct daily temperature range plot with 30 yr daily normals and current year's data plotted on top
 #TempPlot =
 ggplot() +
@@ -330,6 +336,7 @@ ggplot() +
   theme(
     legend.position = c(0.53, 0.15), 
     legend.direction = "horizontal",
+    axis.title=element_text(size=14),
     )
 #TempPlot
 
@@ -340,7 +347,7 @@ ggplot() +
 Row
 -----------------------------------------------------------------------
 
-### Hotness Index
+### Hotness Index - Are the hot days getting hotter?
 
 
 ```{r, fig.cap="The Hotness Index is defined as the number of days H that the daily maximum Fahrenheit temperature is H or above.  The points show the annual variation, the red line smooths the data using a loess filter and the gray shading is the 95% CI."}
@@ -369,7 +376,7 @@ hFactorPlot
 
 ```
 
-### Coldness Index
+### Coldness Index - Are the cold days getting colder? 
 
 
 ```{r, fig.cap="The Coldness Index is defined as the number of days C at which the Fahrenheit temperature relative to the freezing point of water (32 degF) is −C or less. The points show the annual variation, the blue line smooths the data using a loess filter and the gray shading is the 95% CI."}
@@ -386,88 +393,101 @@ cFactorPlot
 Row
 -----------------------------------------------------------------------
 
-### Monthly Mean Temperature Anomaly Comparison
-```{r}
+### Monthly Mean Temperature Anomaly
+```{r, fig.cap="Monthly temperature anomaly: This bar graph compares the average monthly temperature computed over the full duration of the record with that averaged over just the last ten years (2010-2019)."}
 
 # anomaly plots comparing past with present at a monthly scale
 
-# anomaly for each month is a 10 year average that is subtracted from the 30 normal (1981-2010) monthly average for the same month
+# anomaly for each month is a 10 year average that is subtracted from the monthly average for the whole data set...  the hooks are here to add more time ranges to test AND to use the Normal (1981-2010) time range.
 
 # subset 10 year chunks from the whole data set
-old10DF = TempPreALL[TempPreALL$year.x > 1899 & TempPreALL$year.x < 1910, ]
-mid10DF = TempPreALL[TempPreALL$year.x > 1959 & TempPreALL$year.x < 1970, ]
+#old10DF = TempPreALL[TempPreALL$year.x > 1899 & TempPreALL$year.x < 1910, ]
+#mid10DF = TempPreALL[TempPreALL$year.x > 1959 & TempPreALL$year.x < 1970, ]
 latest10DF = TempPreALL[TempPreALL$year.x > 2009 & TempPreALL$year.x < 2020, ]
 
-# create output DFs
-norm30MonthDF = setNames(data.frame(matrix(ncol = 4, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean"))
 
-oldMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
-midMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
+# create output DFs
+#norm30MonthDF = setNames(data.frame(matrix(ncol = 4, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean"))
+ALLMonthDF = setNames(data.frame(matrix(ncol = 4, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean"))
+#oldMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
+#midMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
 latestMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
 
 # loop through each month and calculate monthly mean temp and total precip
 for (i in 1:12) {
+  # The whole data set
+  currentMonthDF = TempPreALL[TempPreALL$month == i, ]
+  ALLMonthDF[i,"monthNum"] = i
+  ALLMonthDF[i, "TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  ALLMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  # divide by the length (in years) to get the average monthly precip.
   
-  # Norm30 DF
-  currentMonthDF = norm30[norm30$month == i, ]
-  norm30MonthDF[i,"monthNum"] = i
-  norm30MonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
-  norm30MonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  # divide by the length (in years) to get the average monthly precip.
+  # # Norm30 DF
+  # currentMonthDF = norm30[norm30$month == i, ]
+  # norm30MonthDF[i,"monthNum"] = i
+  # norm30MonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  # norm30MonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  
+  # 
+  # # Old DF
+  # currentMonthDF = old10DF[old10DF$month == i, ]
+  # oldMonthDF[i,"monthNum"] = i
+  # oldMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  # oldMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  
+  # oldMonthDF[i,"TempAnom"] = oldMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
+  # oldMonthDF[i,"PrecipAnom"] = oldMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
+  # 
+  # # Mid DF
+  # currentMonthDF = mid10DF[mid10DF$month == i, ]
+  # midMonthDF[i,"monthNum"] = i
+  # midMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  # midMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10
+  # midMonthDF[i,"TempAnom"] = midMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
+  # midMonthDF[i,"PrecipAnom"] = midMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
   
-  # Old DF
-  currentMonthDF = old10DF[old10DF$month == i, ]
-  oldMonthDF[i,"monthNum"] = i
-  oldMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
-  oldMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  # divide by the length (in years) to get the average monthly precip.
-  oldMonthDF[i,"TempAnom"] = oldMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
-  oldMonthDF[i,"PrecipAnom"] = oldMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
-  
-  # Mid DF
-  currentMonthDF = mid10DF[mid10DF$month == i, ]
-  midMonthDF[i,"monthNum"] = i
-  midMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
-  midMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10
-  midMonthDF[i,"TempAnom"] = midMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
-  midMonthDF[i,"PrecipAnom"] = midMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
-  
-  # latest DF
+  # latest DF -- vs WHOLE DATA SET 
   currentMonthDF = latest10DF[latest10DF$month == i, ]
   latestMonthDF[i,"monthNum"] = i
   latestMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
   latestMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  
-  latestMonthDF[i,"TempAnom"] = latestMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
-  latestMonthDF[i,"PrecipAnom"] = latestMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
+  latestMonthDF[i,"TempAnom"] = latestMonthDF[i,"TempMean"] - ALLMonthDF[i,"TempMean"]
+  latestMonthDF[i,"PrecipAnom"] = latestMonthDF[i,"PrecipMean"] - ALLMonthDF[i,"PrecipMean"]
   
 }
 
-# create field with month names and impose an order for their display using factor()
-oldMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
-oldMonthDF$monthName = factor(oldMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
-
-midMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
-midMonthDF$monthName = factor(midMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+# # create field with month names and impose an order for their display using factor()
+# oldMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+# oldMonthDF$monthName = factor(oldMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+# 
+# midMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+# midMonthDF$monthName = factor(midMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
 
 latestMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
 latestMonthDF$monthName = factor(latestMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
 
 
-# Make the three panel bar plot showing the anomaly
-oldPlot = ggplot(data = oldMonthDF) +
-  geom_col(mapping = aes(x=monthName, y=TempAnom), fill="light blue") +
-  xlab("1900 - 1909 Compared to 1981 - 2010") +
-  ylab("Anomaly (deg F)")
 
-midPlot = ggplot(data = midMonthDF) +
-  geom_col(mapping = aes(x=monthName, y=TempAnom), fill="blue") +
-  xlab("1960 - 1969 Compared to 1981 - 2010") +
-  ylab("Anomaly (deg F)")
+# # Make the three panel bar plot showing the anomaly
+# oldPlot = ggplot(data = oldMonthDF) +
+#   geom_col(mapping = aes(x=monthName, y=TempAnom), fill="light blue") +
+#   xlab("1900 - 1909 Compared to 1981 - 2010") +
+#   ylab("Anomaly (deg F)")
+# 
+# midPlot = ggplot(data = midMonthDF) +
+#   geom_col(mapping = aes(x=monthName, y=TempAnom), fill="blue") +
+#   xlab("1960 - 1969 Compared to 1981 - 2010") +
+#   ylab("Anomaly (deg F)")
+# 
+# latestPlot = ggplot(data = latestMonthDF) +
+#   geom_col(mapping = aes(x=monthName, y=TempAnom), fill="dark blue") +
+#   xlab("2010 - 2019 Compared to 1981 - 2010") +
+#   ylab("Anomaly (deg F)")
+# 
+# grid.arrange(oldPlot,midPlot,latestPlot, ncol = 1)
 
-latestPlot = ggplot(data = latestMonthDF) +
+ggplot(data = latestMonthDF) +
   geom_col(mapping = aes(x=monthName, y=TempAnom), fill="dark blue") +
-  xlab("2010 - 2019 Compared to 1981 - 2010") +
+  xlab("2010 - 2019 Monthly Average Temperature Compared to the Whole Record") +
   ylab("Anomaly (deg F)")
 
-grid.arrange(oldPlot,midPlot,latestPlot, ncol = 1)
 
 ```
 
