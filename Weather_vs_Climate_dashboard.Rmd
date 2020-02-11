@@ -1,0 +1,474 @@
+---
+title: "Weather vs. Climate"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(rnoaa)
+library(data.table)
+library(lubridate)
+library(sf)
+library(spData)
+library(igraph)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(zoo)
+library(knitr)
+library(gridExtra)
+
+# Set some Parameters:
+
+# Pick A Weather Station
+stationID = "USC00273850"  # Hanover NH
+#stationID = "USC00097600"  # Rome GA
+#stationID = "USC00046719" # Pasadena CA
+#stationID = "USC00194313"  # Lowell MA
+#stationID = "USC00439984"  # Woodstock VT
+#stationID = "USC00438556"  # Thetford VT
+
+# Pick a year for temperature
+currentYear = 2017  # MAKE DYNAMIC IN SHINY
+
+
+# ***********************************  Filter Stations and Plot **************************
+# load all GHCN Weather Stations
+GHCN_all = fread("GHCN_Weather_Stations_ALL.txt") 
+
+# filter all to unique station IDs for all GHCN weather stations
+GHCN_stations = unique(GHCN_all, by = "Station")
+
+# filter for active stations only
+GHCN_stations = GHCN_stations[GHCN_stations$Tend > "2018"]
+
+# filter for 30 year records of data collection
+# Add a new field (Diff_yrs) and set the value equal to the difference in Tend and Tstart
+GHCN_stations[, Diff_yrs := GHCN_stations$Tend - GHCN_stations$Tstart]
+# subset
+GHCN_select = GHCN_stations[GHCN_stations$Diff_yrs >29]
+
+# Make an sf object out of the unique stations 
+GHCN_select_shp <- st_as_sf(GHCN_select, coords = c("Long", "Lat"), crs = 4326)
+
+# clip the data set down to the US
+# get US geometry from spdata "world" data set
+USonly = world[world$name_long == "United States", ]
+
+# clip the dust GHCN stations data to only those stations in the US
+USstations_shp = GHCN_select_shp[USonly, ]
+
+# Find the station type by looking at the first three letters of the Station ID, then subset to keep only USC stations
+USstations_shp$StationType = substr(USstations_shp$Station, 1,3)
+USCs_shp = USstations_shp[USstations_shp$StationType == "USC", ]
+
+# Pick a Station, Get Data, Process Data  ***********************************
+
+
+
+# make and sf object out of the selected station
+current_station_shp <- USCs_shp[USCs_shp$Station == stationID, ]
+
+
+# Beacuse not all variables have the same number of data entries... 
+
+# create an unbroken range of dates from the first observations to modern times and make it into the first row of a data frame
+#date = seq.Date(as.Date("1893/6/1"), as.Date("2019/6/1"), "day")
+#WXdf = data.frame(date)
+
+# Get the daily data for weather station in separate data frames
+TempMin = as.data.frame(ghcnd_search(stationID, var = "TMIN", refresh = TRUE))  # units = 1/10 of degC   , refresh = TRUE
+TempMAX = as.data.frame(ghcnd_search(stationID, var = "TMAX", refresh = TRUE))  # units = 1/10 of degC
+PrecipMM = as.data.frame(ghcnd_search(stationID, var = "PRCP", refresh = TRUE)) # units = 1/10 of mm
+#SnowFall = as.data.frame(ghcnd_search(stationID, var = "SNOW")) # mm
+#SnowDepth = as.data.frame(ghcnd_search(stationID, var = "SNWD")) # mm
+#dustObs = as.data.frame(ghcnd_search(stationID, var = "WT07")) # dust obs
+
+
+# Match dates to organize data and convert to deg C and mm
+
+# %%%%%%%%%%%%%%%%% Hotness and Coldness Indicies %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# from https://eos.org/geofizz/hotness-and-coldness-indexes-based-on-the-fahrenheit-scale
+
+# H-index for Max temp
+TempMAX$degF = round(TempMAX$tmax.tmax/10*(9/5)+32)  # create a new deg F column and round to nearest degree
+TempMAX$year = year(TempMAX$tmax.date)  # create a year column for looping through
+startYear = min(TempMAX$year)
+endYear = max(TempMAX$year)
+lengthOfRecord = endYear - startYear
+hFactor = setNames(data.frame(matrix(ncol = 3, nrow = lengthOfRecord)), c("year", "hNum", "cNum"))
+
+# C index for Min Temp
+TempMin$degF = round(TempMin$tmin.tmin/10*(9/5)+32)  # create a new deg F column and round to nearest degree
+TempMin$coldness = TempMin$degF-32
+TempMin$year = year(TempMin$tmin.date)
+
+
+rowNum = 0
+
+for (i in startYear:endYear) {
+  rowNum = rowNum + 1
+  hFactor[rowNum,1] = i
+  
+  # H Index calculation
+  yearMax = TempMAX[TempMAX$year == i, ]  # get one year of data
+  yearMax$rank = rank(-yearMax$degF, ties.method = "random")  # rank the high temps in decsending order
+  yearMax$test <- as.numeric(yearMax$rank < yearMax$degF)  # create new column to store comparsion of rank with temp 
+  yearMax = yearMax[yearMax$test == 1, ]  # subset to keep only those rows where rank > temp
+  hFactor[rowNum,2]  = max(yearMax$rank, na.rm = TRUE) # find the crossover where rank exceeds temperature --  the H factor
+  
+  # C Index Calculation
+  yearMin = TempMin[TempMin$year == i, ]
+  yearMin$rank = rank(yearMin$coldness, ties.method = "random")
+  yearMin$test <- as.numeric(yearMin$rank < -yearMin$coldness)
+  yearMin = yearMin[yearMin$test == 1, ]
+  hFactor[rowNum,3]  = max(yearMin$rank, na.rm = TRUE)
+}
+
+xLow = min(hFactor$year)
+xHigh = max(hFactor$year)
+
+#plot(hFactor$year,hFactor$cNum)
+
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% End Hotness and Coldness Indicies %%%%%%%%%%%%%%%%%%%%%%
+
+
+# *********************  Create Climographs for 30 yr normals ****************************************
+
+# combine temperature data tables with dplyr left_join(), note that it allows you to match join fields of different names
+TempALL = left_join(TempMAX, TempMin, by = c("tmax.date" = "tmin.date"))  # note that order matters... Tmax is ".x", Tmin is ".y" for shared column names
+TempPreALL = left_join(TempALL, PrecipMM, by = c("tmax.date" = "prcp.date"))
+TempPreALL$precipInches = TempPreALL$prcp.prcp/254
+
+# add Month, julian day, and average daily temp columns
+TempPreALL$month = month(TempPreALL$tmax.date)
+TempPreALL$julDay = yday(as.Date(TempPreALL$tmax.date))
+TempPreALL$dailyMeanTemp = (TempPreALL$degF.x + TempPreALL$degF.y)/2
+
+
+# monthly means for the whole record ==========================================
+# Max Temp
+outTmaxMonth = TempPreALL %>% group_by(day=floor_date(tmax.date, "month")) %>%
+  summarize(degF.x=mean(degF.x))
+
+# Min Temp
+outTminMonth = TempPreALL %>% group_by(day=floor_date(tmax.date, "month")) %>%
+  summarize(degF.y=mean(degF.y))
+
+# Precip
+outPrecipMonth = TempPreALL %>% group_by(day=floor_date(tmax.date, "month")) %>%
+  summarize(precipInches=sum(precipInches))
+
+# end monthly means for the whole record ======================================
+
+# get 30 years of data for the common "Normal" 1981 - 2010 -- MAKE RANGE DYNAMIC IN SHINY
+normStartYear = 1981
+normEndYear = 2010
+normLengthYears = normEndYear - normStartYear
+norm30 = TempPreALL[TempPreALL$year.x >= normStartYear & TempPreALL$year.x <= normEndYear, ]
+
+# create data frames for output from loops below
+month_summary = setNames(data.frame(matrix(ncol = 4, nrow = 12)), c("month", "Tmin", "Tmax", "Precip"))
+day_summary = setNames(data.frame(matrix(ncol = 11, nrow = 366)), c("day", "Tmin", "Tmax", "Tmean","Tmin2SD","Tmax2SD","meanPrecip","cumSumPrecip","precipSD","TmaxRecord","TminRecord"))
+
+
+# Loop Through Months and calculate average high and low temps and sum of precip
+
+for (i in 1:12) {
+  monthDF = norm30[norm30$month == i, ] # subset the data to a single month
+  month_summary[i,1] = i
+  month_summary[i,2] = mean(monthDF$degF.y, na.rm = TRUE) # Tmin mean
+  month_summary[i,3] = mean(monthDF$degF.x, na.rm = TRUE) # Tmax mean
+  month_summary[i,4] = sum(monthDF$precipInches, na.rm = TRUE)/normLengthYears # precip sum (averaged over the length of the record)
+  month_summary[i,5] = sum(monthDF$precipInches, na.rm = TRUE)
+}
+
+# Loop Through Julian Days of the year and calculate a lot of things
+for (i in 1:366) {
+  dayDF = norm30[norm30$julDay == i, ]  # subset the data to a single julian day
+  day_summary[i,1] = i
+  day_summary[i,2] = mean(dayDF$degF.y, na.rm = TRUE)  # mean low temp
+  day_summary[i,3] = mean(dayDF$degF.x, na.rm = TRUE)  # mean high temp
+  day_summary[i,4] = (day_summary[i,2] + day_summary[i,3])/2   # average the high and low to generate a crude mean for coloring lines on the plot
+  day_summary[i,5] = mean(dayDF$degF.y, na.rm = TRUE) - (2*sd(dayDF$degF.y, na.rm = TRUE)) # two sigma uncertainty of the mean low temp
+  day_summary[i,6] = mean(dayDF$degF.x, na.rm = TRUE) + (2*sd(dayDF$degF.x, na.rm = TRUE)) # ditto for high
+  day_summary[i,7] = mean(dayDF$precipInches, na.rm = TRUE)  # mean precip
+  day_summary[i,9] = sd(dayDF$precipInches, na.rm = TRUE)
+  dayDF = TempPreALL[TempPreALL$julDay == i, ]      # reset the dayDF to the whole data set to calculate the record hi and low
+  day_summary[i,10]= max(dayDF$degF.x, na.rm = TRUE)   # get the daily record high temp
+  day_summary[i,11]= min(dayDF$degF.y, na.rm = TRUE)   # ditto for low temp
+}
+
+day_summary$cumSumPrecip = cumsum(day_summary$meanPrecip)  # calculate the cumulative sum of the average rainfall for each day
+
+
+# get a specific year of data 
+
+currentYearDF = TempPreALL[TempPreALL$year.x == currentYear, ]
+currentYearDF$Tmean = (currentYearDF$degF.x + currentYearDF$degF.y)/2
+currentYearDF$precipInches[is.na(currentYearDF$precipInches)] <- 0   # replace NAs in precip data with zeros
+currentYearDF$cumSumPrecip = cumsum(currentYearDF$precipInches)
+
+
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+### Map of Weather Stations from the Global Historical Climatology Network - The blue pin indicates the location of the current station being plotted below. The darkness of the point indicates the length of the record for each station.  Click on points to get the station ID number.
+
+```{r}
+# Plot Stations with Leaflet
+coords = st_coordinates(current_station_shp)
+currentLat = coords[2]
+currentLon = coords[1]
+
+# color ramp for sumGrid -- Also Applied to peak prominence!
+pal <- colorNumeric(
+  palette = "Blues",
+  domain = USCs_shp$Diff_yrs
+)
+
+Lmap <- leaflet(USCs_shp, height = 800) %>%  # create the map and set the height of the window for it
+  setView(lng = currentLon, lat = currentLat, zoom = 6) %>%   # center the map on the current station
+  addProviderTiles(providers$CartoDB.Positron) %>%  # add CardoDB Map Tiles
+  addCircleMarkers(data = USCs_shp,
+    radius=5, 
+    fill = TRUE, 
+    stroke = TRUE, 
+    color = "black", 
+    weight = 1, 
+    fillColor = ~pal(Diff_yrs), 
+    fillOpacity = 1, 
+    popup = ~paste("Station ID: ", Station, "<br>Record Length: ", Diff_yrs, " years")
+      ) %>%
+  addLegend(pal = pal, values = ~USCs_shp$Diff_yrs, title = "Data Record in Years") %>%
+  addMarkers(lng=currentLon, lat=currentLat, popup = "Current Weather Station")
+Lmap
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Monthly Temperture and Precipition Normal (1981-2010)  
+
+```{r, fig.cap="Classic Climograph showing average monthly temperature (gray bars) and precipitation (blue line). "}
+
+
+# Classic Climograph Plot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# create field with month names and impose an order for their display using factor()
+month_summary$monthNames = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+month_summary$monthNames = factor(month_summary$monthNames, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+
+#x = factor(month_summary$monthNames, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+
+# get the scaling factor for the secondary y axis
+yScaleFactor = max((month_summary$Tmax+month_summary$Tmin)/3)/max(month_summary$Precip)
+
+# This makes a combo bar and line plot with a second axis...  
+Climograph = ggplot(month_summary, aes(x = monthNames, group = 1)) +                           # note the "group = 1" - this tells it that there is only one value per monthName group
+  geom_linerange(mapping = aes(ymin = 0, ymax = (Tmax+Tmin)/2), color = "gray", size = 10) +
+  geom_line(mapping = aes(y= Precip*yScaleFactor), color = "blue", size = 3) +
+  scale_y_continuous(sec.axis = sec_axis(~./yScaleFactor, name = "Precipitation (inches)")) +  # Note the reversal of the scaling factor here!
+  ylab("Average Monthly Temperature (deg F)") +
+  xlab("") +
+  theme_light()
+
+Climograph
+
+```
+
+### Data Completeness Matrix
+
+```{r, fig.cap="Blue to Red colors reflect recorded daily high temperature, gray and white represent missing data."}
+
+# Heat map for visualizing data completeness %%%%%%%%%%%%%%%%%%%%
+
+completeness = ggplot(TempPreALL, aes(julDay, year.x)) +
+  geom_tile(aes(fill = dailyMeanTemp), color = "white") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(title = "Data Record Completeness", x = "Julian Day", y = "Year") +
+  scale_y_reverse() +  # flip the y axis values
+  theme_light()
+
+completeness
+
+```
+
+
+
+
+Row
+-----------------------------------------------------------------------
+
+### Daily Temperature vs. Long-term Averages
+```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low since 1980 (dark gray)."}
+# construct daily temperature range plot with 30 yr daily normals and current year's data plotted on top
+#TempPlot =
+ggplot() +
+  #geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin2SD, ymax = Tmax2SD), color = "#949494", size = 1.5) +  # 30 yr.2 sigma range
+  geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1.5) +  # daily record high and low temperature range 
+  geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1.5) +        # 30 yr mean hi/lo
+  geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1.5) +   # observed data for particular year
+  scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
+  #scale_fill_identity(name = "30 year Normal High and Low Temp", guide = "legend", labels = c("95% Confidence Range", "Average Range")) +  # trying to label grays on the legend... not working
+  ylab('Temperature (deg F)')+
+  xlab('Julian Day')+
+  ylim(-40, 120) +
+  #ggtitle('Daily Temperature Range')+
+  labs(color="Daily Mean Temp (F)") + # set legend title here
+  theme_light() +
+  theme(
+    legend.position = c(0.53, 0.15), 
+    legend.direction = "horizontal",
+    )
+#TempPlot
+
+```
+
+
+
+Row
+-----------------------------------------------------------------------
+
+### Hotness Index
+
+
+```{r, fig.cap="The Hotness Index is defined as the number of days H that the daily maximum Fahrenheit temperature is H or above.  The points show the annual variation, the red line smooths the data using a loess filter and the gray shading is the 95% CI."}
+hFactorPlot = ggplot() +
+  geom_point(data = hFactor, mapping = aes(x=year, y=hNum),color = "red",, shape = 21, size = 2.5) +
+  #geom_line(data = hFactor, mapping = aes(x=year, y=rollmean(hNum, 25, na.pad = TRUE)), color = "red", size = 4,) +
+  geom_smooth(data = hFactor, mapping = aes(x=year, y=hNum),method = stats::loess, color = "red", size = 2, alpha = 0.5) +
+  xlim(xLow,xHigh) +
+  xlab("Year") +
+  ylab("Hotness Index") +
+  theme_light() 
+hFactorPlot
+
+# cFactorPlot = ggplot() +
+#   geom_point(data = hFactor, mapping = aes(x=year, y=cNum),color = "blue", fill = "blue", shape = 21, size = 3) +
+#   xlim(xLow,xHigh)+ 
+#   xlab("Year") +
+#   ylab("Coldness Index") +
+#   theme_light()
+
+#FactorPlot = ggarrange(hFactorPlot, cFactorPlot, 
+#          labels = c("Hotness Index", "Coldness Index"),
+#          ncol = 2, nrow = 1)
+          
+#FactorPlot
+
+```
+
+### Coldness Index
+
+
+```{r, fig.cap="The Coldness Index is defined as the number of days C at which the Fahrenheit temperature relative to the freezing point of water (32 degF) is −C or less. The points show the annual variation, the blue line smooths the data using a loess filter and the gray shading is the 95% CI."}
+cFactorPlot = ggplot() +
+  geom_point(data = hFactor, mapping = aes(x=year, y=cNum),color = "blue", shape = 21, size = 2.5) +
+  geom_smooth(data = hFactor, mapping = aes(x=year, y=cNum),method = stats::loess, color = "blue", size = 2, alpha = 0.5) +
+  xlim(xLow,xHigh)+
+  xlab("Year") +
+  ylab("Coldness Index") +
+  theme_light()
+cFactorPlot
+
+```
+Row
+-----------------------------------------------------------------------
+
+### Monthly Mean Temperature Anomaly Comparison
+```{r}
+
+# anomaly plots comparing past with present at a monthly scale
+
+# anomaly for each month is a 10 year average that is subtracted from the 30 normal (1981-2010) monthly average for the same month
+
+# subset 10 year chunks from the whole data set
+old10DF = TempPreALL[TempPreALL$year.x > 1899 & TempPreALL$year.x < 1910, ]
+mid10DF = TempPreALL[TempPreALL$year.x > 1959 & TempPreALL$year.x < 1970, ]
+latest10DF = TempPreALL[TempPreALL$year.x > 2009 & TempPreALL$year.x < 2020, ]
+
+# create output DFs
+norm30MonthDF = setNames(data.frame(matrix(ncol = 4, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean"))
+
+oldMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
+midMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
+latestMonthDF = setNames(data.frame(matrix(ncol = 6, nrow = 12)), c("monthNum","monthName", "TempMean","PrecipMean","TempAnom","PrecipAnom"))
+
+# loop through each month and calculate monthly mean temp and total precip
+for (i in 1:12) {
+  
+  # Norm30 DF
+  currentMonthDF = norm30[norm30$month == i, ]
+  norm30MonthDF[i,"monthNum"] = i
+  norm30MonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  norm30MonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  # divide by the length (in years) to get the average monthly precip.
+  
+  # Old DF
+  currentMonthDF = old10DF[old10DF$month == i, ]
+  oldMonthDF[i,"monthNum"] = i
+  oldMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  oldMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  # divide by the length (in years) to get the average monthly precip.
+  oldMonthDF[i,"TempAnom"] = oldMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
+  oldMonthDF[i,"PrecipAnom"] = oldMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
+  
+  # Mid DF
+  currentMonthDF = mid10DF[mid10DF$month == i, ]
+  midMonthDF[i,"monthNum"] = i
+  midMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  midMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10
+  midMonthDF[i,"TempAnom"] = midMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
+  midMonthDF[i,"PrecipAnom"] = midMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
+  
+  # latest DF
+  currentMonthDF = latest10DF[latest10DF$month == i, ]
+  latestMonthDF[i,"monthNum"] = i
+  latestMonthDF[i,"TempMean"] = mean(currentMonthDF$dailyMean, na.rm= TRUE)
+  latestMonthDF[i,"PrecipMean"] = sum(currentMonthDF$precipInches, na.rm = TRUE)/10  
+  latestMonthDF[i,"TempAnom"] = latestMonthDF[i,"TempMean"] - norm30MonthDF[i,"TempMean"]
+  latestMonthDF[i,"PrecipAnom"] = latestMonthDF[i,"PrecipMean"] - norm30MonthDF[i,"PrecipMean"]
+  
+}
+
+# create field with month names and impose an order for their display using factor()
+oldMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+oldMonthDF$monthName = factor(oldMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+
+midMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+midMonthDF$monthName = factor(midMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+
+latestMonthDF$monthName = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec")
+latestMonthDF$monthName = factor(latestMonthDF$monthName, levels = c("Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov","Dec"))
+
+
+# Make the three panel bar plot showing the anomaly
+oldPlot = ggplot(data = oldMonthDF) +
+  geom_col(mapping = aes(x=monthName, y=TempAnom), fill="light blue") +
+  xlab("1900 - 1909 Compared to 1981 - 2010") +
+  ylab("Anomaly (deg F)")
+
+midPlot = ggplot(data = midMonthDF) +
+  geom_col(mapping = aes(x=monthName, y=TempAnom), fill="blue") +
+  xlab("1960 - 1969 Compared to 1981 - 2010") +
+  ylab("Anomaly (deg F)")
+
+latestPlot = ggplot(data = latestMonthDF) +
+  geom_col(mapping = aes(x=monthName, y=TempAnom), fill="dark blue") +
+  xlab("2010 - 2019 Compared to 1981 - 2010") +
+  ylab("Anomaly (deg F)")
+
+grid.arrange(oldPlot,midPlot,latestPlot, ncol = 1)
+
+```
+
+
