@@ -2,7 +2,7 @@
 
 This R dashboard uses daily weather station data from the Global Historical Climatology Network to illustrate the difference between weather and climate and also how climate may or may not be changing. This code is run in R using R Markdown and knits a dashboard of visualizations using Flexdashboards.  At the moment the code is static, but by editing the station ID and year variables described below, one can pick any GHCN weather station in the lower 48 states to visualize.  Click the ***weather_vs_climate_dashboard.html*** file in the repo to see an example of the output dashboard for Hanover New Hampshire.
 
-###Running the Code
+### Running the Code
 
 The code is written in an R Markdown file *(weather_vs_climate_dashboard.Rmd)* which can be run section by section or knit to build a Flex Dashboard that outputs as a .html file.  The only necessary file it requires at a runtime is the *GHCN_Weather_Stations_ALL.txt* file found in the repo. At first, the code is set up to visualize data for Hanover, New Hampshire, but these inputs can be easily changed to any station in the contiguous U.S. and any year in the record. The code requires internet access so that it can reach the GHCN weather data on NOAA servers using functions from the ***rnoaa*** package.   
 
