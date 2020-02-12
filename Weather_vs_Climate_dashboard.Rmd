@@ -107,7 +107,7 @@ TempMAX$year = year(TempMAX$tmax.date)  # create a year column for looping throu
 startYear = min(TempMAX$year)
 endYear = max(TempMAX$year)
 lengthOfRecord = endYear - startYear
-hFactor = setNames(data.frame(matrix(ncol = 3, nrow = lengthOfRecord)), c("year", "hNum", "cNum"))
+hFactor = setNames(data.frame(matrix(ncol = 5, nrow = lengthOfRecord)), c("year","numDays","nNAs","hNum", "cNum"))
 
 # C index for Min Temp
 TempMin$degF = round(TempMin$tmin.tmin/10*(9/5)+32)  # create a new deg F column and round to nearest degree
@@ -119,28 +119,38 @@ rowNum = 0
 
 for (i in startYear:endYear) {
   rowNum = rowNum + 1
-  hFactor[rowNum,1] = i
+  hFactor[rowNum,"year"] = i
+  yearMax = TempMAX[TempMAX$year == i, ]  # get one year of data
+  
+  # Find the number of days in the year and scan for NAs 
+  hFactor[rowNum,"numDays"] = nrow(yearMax)  # number of days in the record for the year
+  gotNAs = is.na(yearMax$degF)   # find the number of NAs for that year
+  hFactor[rowNum,"nNAs"] = length(gotNAs[gotNAs == TRUE])
   
   # H Index calculation
-  yearMax = TempMAX[TempMAX$year == i, ]  # get one year of data
   yearMax$rank = rank(-yearMax$degF, ties.method = "random")  # rank the high temps in decsending order
   yearMax$test <- as.numeric(yearMax$rank < yearMax$degF)  # create new column to store comparsion of rank with temp 
   yearMax = yearMax[yearMax$test == 1, ]  # subset to keep only those rows where rank > temp
-  hFactor[rowNum,2]  = max(yearMax$rank, na.rm = TRUE) # find the crossover where rank exceeds temperature --  the H factor
+  hFactor[rowNum,"hNum"]  = max(yearMax$rank, na.rm = TRUE) # find the crossover where rank exceeds temperature --  the H factor
   
   # C Index Calculation
   yearMin = TempMin[TempMin$year == i, ]
   yearMin$rank = rank(yearMin$coldness, ties.method = "random")
   yearMin$test <- as.numeric(yearMin$rank < -yearMin$coldness)
   yearMin = yearMin[yearMin$test == 1, ]
-  hFactor[rowNum,3]  = max(yearMin$rank, na.rm = TRUE)
+  hFactor[rowNum,"cNum"]  = max(yearMin$rank, na.rm = TRUE)
 }
+
+# Screen for incomplete years or those with too many missing data points
+hFactor <- hFactor %>%
+  filter(numDays > 365-(365*0.05))
+
+hFactor <- hFactor %>%
+  filter(nNAs < 365*0.05)    # remove years with greater than 5% of the data missing (i.e. NAs)
+     # remove years where more than 5% of the days are missing from the record
 
 xLow = min(hFactor$year)
 xHigh = max(hFactor$year)
-
-#plot(hFactor$year,hFactor$cNum)
-
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% End Hotness and Coldness Indicies %%%%%%%%%%%%%%%%%%%%%%
 
@@ -229,7 +239,7 @@ currentYearDF$cumSumPrecip = cumsum(currentYearDF$precipInches)
 Row
 -----------------------------------------------------------------------
 
-### Map of Weather Stations from the Global Historical Climatology Network - The blue pin indicates the location of the current station being plotted below. The darkness of the point indicates the length of the record for each station. The map is dynamic, pan, zoom and click on points to get the station ID number.
+### **Map of Weather Stations from the Global Historical Climatology Network** - The blue pin indicates the location of the current station being plotted below. The darkness of the point indicates the length of the record for each station. The map is dynamic, pan, zoom and click on points to get the station ID number.
 
 ```{r}
 # Plot Stations with Leaflet
@@ -264,9 +274,10 @@ Lmap
 Row
 -----------------------------------------------------------------------
 
-### Monthly Temperture and Precipition (Averaged over 1981-2010)  
+### **Monthly Temperture and Precipition** - This is the classic "Climograph" where average monthly temperature (left Y axis) and precipitation (right Y axis) are displayed together.  This plot averages data over a 30 year period starting in 1981 and ending in 2010 (commonly referred to as the Normal by climate scientists).
+  
 
-```{r, fig.cap="Classic Climograph showing average monthly temperature (gray bars) and precipitation (blue line). "}
+```{r, fig.cap="Average monthly temperature (gray bars) and Precipitation (blue line). "}
 
 
 # Classic Climograph Plot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -293,7 +304,7 @@ Climograph
 
 ```
 
-### Data Completeness Matrix
+### **Data Completeness Matrix** - This tile plot show the data density for the full length of the record for the current weather station.  Every day for the record is represented, where color ranges from blue to red it is showing the daily mean temperature, where gray or white are present means that no temperature data was recorded.
 
 ```{r, fig.cap="Blue to Red colors reflect recorded daily mean temperature, gray and white represent missing data."}
 
@@ -316,10 +327,14 @@ completeness
 Row
 -----------------------------------------------------------------------
 
-### Daily Temperature Experienced vs. the Average and the Records for each day
+### **Daily Temperature Range** - This plot compares the daily temperature range for a single year (the colorful vertical lines) to the average daily high and low temperature (light gray) and the record high and low temperature observed at the current station (darker gray).  
 ```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low temperature ever recorded at this station (dark gray)."}
+
+
+plotAnnotation = paste("Daily Temperature for",as.character(currentYear), sep = " ")
+
 # construct daily temperature range plot with 30 yr daily normals and current year's data plotted on top
-#TempPlot =
+
 ggplot() +
   #geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin2SD, ymax = Tmax2SD), color = "#949494", size = 1.5) +  # 30 yr.2 sigma range
   geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1.5) +  # daily record high and low temperature range 
@@ -332,13 +347,13 @@ ggplot() +
   ylim(-40, 120) +
   #ggtitle('Daily Temperature Range')+
   labs(color="Daily Mean Temp (F)") + # set legend title here
+  annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
   theme_light() +
   theme(
     legend.position = c(0.53, 0.15), 
     legend.direction = "horizontal",
     axis.title=element_text(size=14),
     )
-#TempPlot
 
 ```
 
@@ -347,10 +362,10 @@ ggplot() +
 Row
 -----------------------------------------------------------------------
 
-### Hotness Index - Are the hot days getting hotter?
+### **Hotness Index - Are the hot days getting hotter and more plentiful?**  For the Hotness index, a value of 75 for a particular year means that the maximum daily temperature equalled or exceeded 75 degrees Fahrenheit 75 times during the year. *If the Hotness index is increasing, both the number of hot days and the temperature on those days is increasing.*
 
 
-```{r, fig.cap="The Hotness Index is defined as the number of days H that the daily maximum Fahrenheit temperature is H or above.  The points show the annual variation, the red line smooths the data using a loess filter and the gray shading is the 95% CI."}
+```{r, fig.cap="The points show the annual variation in the Hotness Index, the red line smooths the data using a loess filter and the gray shading is the 95% CI."}
 hFactorPlot = ggplot() +
   geom_point(data = hFactor, mapping = aes(x=year, y=hNum),color = "red",, shape = 21, size = 2.5) +
   #geom_line(data = hFactor, mapping = aes(x=year, y=rollmean(hNum, 25, na.pad = TRUE)), color = "red", size = 4,) +
@@ -376,7 +391,7 @@ hFactorPlot
 
 ```
 
-### Coldness Index - Are the cold days getting colder? 
+### **Coldness Index - Are the cold days getting colder and greater in number?** The Coldness index is similar; here a value of 25 means that the minimum daily temperature equalled or exceeded 25 degrees Fahrenheit *below* the freezing point of water (at 32 deg F)  25 times during the year. *If the Coldness index is dropping year to year, it means that cold days are warmer and less frequent.* 
 
 
 ```{r, fig.cap="The Coldness Index is defined as the number of days C at which the Fahrenheit temperature relative to the freezing point of water (32 degF) is −C or less. The points show the annual variation, the blue line smooths the data using a loess filter and the gray shading is the 95% CI."}
@@ -393,8 +408,8 @@ cFactorPlot
 Row
 -----------------------------------------------------------------------
 
-### Monthly Mean Temperature Anomaly
-```{r, fig.cap="Monthly temperature anomaly: This bar graph compares the average monthly temperature computed over the full duration of the record with that averaged over just the last ten years (2010-2019)."}
+### **Monthly Mean Temperature Anomaly** - This plot illustrates how the monthly mean temperature from the last 10 years compares to the monthly mean temperature calculated using the full record from the weather station.  The "anomaly" is calculated as the difference between the last 10 years and the full record for each month.
+```{r}
 
 # anomaly plots comparing past with present at a monthly scale
 
@@ -403,7 +418,7 @@ Row
 # subset 10 year chunks from the whole data set
 #old10DF = TempPreALL[TempPreALL$year.x > 1899 & TempPreALL$year.x < 1910, ]
 #mid10DF = TempPreALL[TempPreALL$year.x > 1959 & TempPreALL$year.x < 1970, ]
-latest10DF = TempPreALL[TempPreALL$year.x > 2009 & TempPreALL$year.x < 2020, ]
+latest10DF = TempPreALL[TempPreALL$year.x > endYear-11 & TempPreALL$year.x < endYear, ]
 
 
 # create output DFs
