@@ -1,4 +1,5 @@
 # Weather vs. Climate
+Created By: Ryan McKeon | Date First Released: 12 February 2020 | Contact: ryan.e.mckeon@dartmouth.edu
 
 This R dashboard uses daily weather station data from the Global Historical Climatology Network to illustrate the difference between weather and climate and also how climate may or may not be changing. This code is run in R using R Markdown and knits a dashboard of visualizations using Flexdashboards.  At the moment the code is static, but by editing the station ID and year variables described below, one can pick any GHCN weather station in the lower 48 states to visualize.  Click the ***weather_vs_climate_dashboard.html*** file in the repo to see an example of the output dashboard for Hanover New Hampshire.
 
