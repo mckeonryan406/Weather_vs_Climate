@@ -327,7 +327,7 @@ completeness
 Row
 -----------------------------------------------------------------------
 
-### **Daily Temperature Range** - This plot compares the daily temperature range for a single year (the colorful vertical lines) to the average daily high and low temperature (light gray) and the record high and low temperature observed at the current station (darker gray).  
+### **Daily Temperature Range** - This plot compares the daily temperature range for a single year (the colorful vertical lines) to the average daily high and low temperature (light gray) and the record high and low temperature observed at the current station (darker gray). Red and blue diamond indicate when the high or low temperature record was set during the particular year being observed.    
 ```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low temperature ever recorded at this station (dark gray)."}
 
 # Find out if any days set records for the temperature history 
