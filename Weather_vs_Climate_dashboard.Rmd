@@ -41,7 +41,7 @@ stationID = "USC00273850"  # Hanover NH
 #stationID = "USC00471416"  # Hanover NH
 
 # Pick a year for temperature plot
-currentYear = 2016  # MAKE DYNAMIC IN SHINY
+currentYear = 2020  # MAKE DYNAMIC IN SHINY
 
 # Path to GHCN Weather Stations Text File
 GHCN_all = fread("GHCN_Weather_Stations_ALL.txt") 
@@ -330,16 +330,21 @@ Row
 ### **Daily Temperature Range** - This plot compares the daily temperature range for a single year (the colorful vertical lines) to the average daily high and low temperature (light gray) and the record high and low temperature observed at the current station (darker gray). Red and blue diamonds indicate when the high or low temperature record was set during the particular year being observed.    
 ```{r,  fig.width=9, fig.height=5, fig.cap="This shows daily temperature ranges over the course of a year vs. the average high and low (light gray) and the record high and low temperature ever recorded at this station (dark gray)."}
 
+recordHighSet = FALSE
+recordLowSet = FALSE
+
 # Find out if any days set records for the temperature history 
 for (i in 1:366) {
   if (is.na(currentYearDF[i, "degF.x"]) == FALSE) {
     if (currentYearDF[i,"degF.x"] == day_summary[i,"TmaxRecord"]) {
       day_summary[i,"isRecordMax"] = currentYearDF[i,"degF.x"]
+      recordHighSet = TRUE
     }
   }
   if (is.na(currentYearDF[i, "degF.y"]) == FALSE) {
     if (currentYearDF[i,"degF.y"] == day_summary[i,"TminRecord"]) {
       day_summary[i,"isRecordMin"] = currentYearDF[i,"degF.y"]
+      recordLowSet = TRUE
     }
   }
 }
@@ -348,28 +353,90 @@ plotAnnotation = paste("Daily Temperature for",as.character(currentYear), sep = 
 
 # construct daily temperature range plot with 30 yr daily normals and current year's data plotted on top
 
-ggplot() +
-  #geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin2SD, ymax = Tmax2SD), color = "#949494", size = 1.5) +  # 30 yr.2 sigma range
-  geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1) +  # daily record high and low temperature range 
-  geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1) +        # 30 yr mean hi/lo
-  geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1) +   # observed data for particular year
-  geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMax), shape=23, color="black", fill="red",size=3) +
-  geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMin), shape=23, color="black", fill="blue",size=3) +
-  scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
-  #scale_fill_identity(name = "30 year Normal High and Low Temp", guide = "legend", labels = c("95% Confidence Range", "Average Range")) +  # trying to label grays on the legend... not working
-  ylab('Temperature (deg F)')+
-  xlab('Julian Day')+
-  ylim(-40, 120) +
-  #ggtitle('Daily Temperature Range')+
-  labs(color="Daily Mean Temp (F)") + # set legend title here
-  annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
-  theme_light() +
-  theme(
-    legend.position = c(0.53, 0.15), 
-    legend.direction = "horizontal",
-    axis.title=element_text(size=14),
+# For Plotting... test to see if records are set this year -- seems to kick an error if no records are set for high or low temps in a particular year... Annoying, but you need to test for all 4 possible cases.
+if (recordHighSet == TRUE & recordLowSet == TRUE) {
+  ggplot() +
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1) +  # daily record high and low temperature range 
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1) +        # 30 yr mean hi/lo
+    geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1) +   # observed data for particular year
+    geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMax), shape=23, color="black", fill="red",size=3) +
+    geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMin), shape=23, color="black", fill="blue",size=3) +
+    scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
+    ylab('Temperature (deg F)')+
+    xlab('Julian Day')+
+    ylim(-40, 120) +
+    labs(color="Daily Mean Temp (F)") + # set legend title here
+    annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
+    theme_light() +
+    theme(
+      legend.position = c(0.53, 0.15), 
+      legend.direction = "horizontal",
+      axis.title=element_text(size=14),
     )
+}
 
+if (recordHighSet == TRUE & recordLowSet == FALSE) {
+  ggplot() +
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1) +  # daily record high and low temperature range 
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1) +        # 30 yr mean hi/lo
+    geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1) +   # observed data for particular year
+    geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMax), shape=23, color="black", fill="red",size=3) +
+    #geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMin), shape=23, color="black", fill="blue",size=3) +
+    scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
+    ylab('Temperature (deg F)')+
+    xlab('Julian Day')+
+    ylim(-40, 120) +
+    labs(color="Daily Mean Temp (F)") + # set legend title here
+    annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
+    theme_light() +
+    theme(
+      legend.position = c(0.53, 0.15), 
+      legend.direction = "horizontal",
+      axis.title=element_text(size=14),
+    )
+}
+
+if (recordHighSet == FALSE & recordLowSet == TRUE) {
+  ggplot() +
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1) +  # daily record high and low temperature range 
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1) +        # 30 yr mean hi/lo
+    geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1) +   # observed data for particular year
+    #geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMax), shape=23, color="black", fill="red",size=3) +
+    geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMin), shape=23, color="black", fill="blue",size=3) +
+    scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
+    ylab('Temperature (deg F)')+
+    xlab('Julian Day')+
+    ylim(-40, 120) +
+    labs(color="Daily Mean Temp (F)") + # set legend title here
+    annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
+    theme_light() +
+    theme(
+      legend.position = c(0.53, 0.15), 
+      legend.direction = "horizontal",
+      axis.title=element_text(size=14),
+    )
+}
+
+if (recordHighSet == FALSE & recordLowSet == FALSE) {
+  ggplot() +
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = TminRecord, ymax = TmaxRecord), color = "#949494", size = 1) +  # daily record high and low temperature range 
+    geom_linerange(data = day_summary, mapping = aes(x = day, ymin = Tmin, ymax = Tmax), color = "#b0b0b0", size = 1) +        # 30 yr mean hi/lo
+    geom_linerange(data = currentYearDF, mapping = aes(x = julDay, ymin = degF.y, ymax = degF.x, color = Tmean), alpha = 0.6, size = 1) +   # observed data for particular year
+    #geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMax), shape=23, color="black", fill="red",size=3) +
+    #geom_point(data = day_summary, mapping = aes(x=day, y=isRecordMin), shape=23, color="black", fill="blue",size=3) +
+    scale_colour_gradient(low = "blue", high = "red", guide = "colorbar") +
+    ylab('Temperature (deg F)')+
+    xlab('Julian Day')+
+    ylim(-40, 120) +
+    labs(color="Daily Mean Temp (F)") + # set legend title here
+    annotate(geom="text", x=50, y=110, label=plotAnnotation,color="Dark Blue") +
+    theme_light() +
+    theme(
+      legend.position = c(0.53, 0.15), 
+      legend.direction = "horizontal",
+      axis.title=element_text(size=14),
+    )
+}
 ```
 
 
